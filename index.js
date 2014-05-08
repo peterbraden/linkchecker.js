@@ -4,7 +4,7 @@
 
 var child_process = require('child_process')
   , path = require('path')
-  , MAX_PROCESSES = 10
+  , MAX_PROCESSES = 20
 
 var testUrls = module.exports = function(startUrl, opts, cb){
 
@@ -22,13 +22,14 @@ var testUrls = module.exports = function(startUrl, opts, cb){
   var currProcesses = 1
 
   var testUrlIter = function(){
+    currProcesses -= 1
+
     if (Object.keys(queue).length < 1){
       if (currProcesses <= 0){
         return cb.apply(this, arguments)
       }
       return;
     }
-    currProcesses -= 1
 
     for (var i = currProcesses; i < Math.min(MAX_PROCESSES, Object.keys(queue).length); i++){ 
       spawnZombieProcess(queue, results, currProcesses, opts, testUrlIter)
@@ -41,7 +42,7 @@ var testUrls = module.exports = function(startUrl, opts, cb){
 
 
 
-var spawnZombieProcess = function(queue, results, currProcesses, opts, cb){
+var spawnZombieProcess = function(queue, results, currProcesses, opts, done){
   var k = Object.keys(queue).pop()
     , d = queue[k][0]
     , s = queue[k][1]
@@ -81,13 +82,14 @@ var spawnZombieProcess = function(queue, results, currProcesses, opts, cb){
       
       z.removeListener('exit', exitListener)
       z.kill("SIGTERM");
-      cb()
+      done()
     }
   })
 
   var exitListener = function(){
+    // TODO - put item back in queue so we can retry
     console.log("# Unexpected Exit from Zombie")
-    cb()
+    done()
   }
   z.on('exit', exitListener)
 
