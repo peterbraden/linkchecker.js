@@ -2,16 +2,8 @@
  * Test website links for valid HTTP Response codes.
  */
 
-var zombie = require('zombie')
-  , assert = require('assert')
-  , url = require('url')
-
-  , FAIL_CODES = [404, 500]
-  , CHROME_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_2) AppleWebKit/53i" + 
-                "7.36 (KHTML, like Gecko) Chrome/36.0.1944.0 Safari/537.36")
-
-var source = '' // This is kinda a hack - global source, scoped to a single browser instance
-
+var child_process = require('child_process')
+  , path = require('path')
 
 var testUrls = module.exports = function(startUrl, opts, cb){
 
@@ -20,96 +12,67 @@ var testUrls = module.exports = function(startUrl, opts, cb){
   opts.depth = opts.depth || 1
   opts.domains = opts.domains || ["localhost:3000"]
 
-  var queue = [ [startUrl, 0, startUrl] ] // url, depth, source
+  var queue = {}
     , results = {}
 
-  var browser = new zombie({silent:true, userAgent : CHROME_UA})
-
-  browser.on('response', function(req, res){
-    if (matchDomainWhitelist(res.url, opts.domains)){
-      results[res.url] = [res.statusCode, source]
-      if (opts.emitter) {
-        opts.emitter.emit('resource-response', res, source)    
-      }
-
-    }
-  })
-
-  browser.on('error', function(err){
-    if (opts.emitter){
-      opts.emitter.emit('browser-error', err, url)
-    }
-  })
+  queue[startUrl] = [0, startUrl] // url, depth, source
 
   var testUrlIter = function(){
-    console.log("# links to visit:", queue.length, ", visited", Object.keys(results).length)
-    if (queue.length < 1){
+    if (Object.keys(queue).length < 1){
       return cb.apply(this, arguments)
     }
-    createTest(queue.pop(), browser, queue, results, opts, testUrlIter)
+
+    var k = Object.keys(queue).pop()
+      , d = queue[k][0]
+      , s = queue[k][1]
+      results[k] = 'pending' // Or we can get in cycles...
+      delete queue[k]
+
+    console.log("# Checking ", k, "depth:", d, "source:", s, " (in queue:", Object.keys(queue).length, ", checked:", Object.keys(results).length + ")")
+    
+    // ZombieJS is riddled with memory leaks. We'll just spawn a new one for each page... 
+    var z = child_process.fork(path.join(__dirname, 'zombie-process.js'), {})
+
+    z.on('message', function(res){
+
+      if (res.stat == 'event' && opts.emitter){
+        opts.emitter.emit.apply(opts.emitter, res.args)
+      }
+      
+      if (res.stat == 'success'){
+        // put into queue
+        var q = res.results
+        q.forEach(function(v){
+          var url = v[0] 
+            , depth = v[1]
+            , source = v[2]
+          
+          if (results[url] != undefined || queue[url] != undefined){
+            // Already searched...
+          } else if (url) {
+            queue[url] = [depth, source]
+          }
+        })
+        
+        z.removeListener('exit', exitListener)
+        z.kill("SIGTERM");
+        testUrlIter()
+      }
+    })
+
+    var exitListener = function(){
+      console.log("# Unexpected Exit from Zombie")
+      testUrlIter()
+    }
+    z.on('exit', exitListener)
+
+    z.send(JSON.stringify({
+      url: k
+    , depth : d
+    , source : s
+    , opts: opts
+    }))
   }
 
   testUrlIter()
 }
-
-
-
-
-
-var createTest = function(item, browser, queue, results, opts, cb){
-  var url = item[0]
-    , depth = item[1]
-  
-  source = item[2] // Assumes no concurrency in browser!!!
-
-  browser.visit(url, function(e){
-    if (matchDomainWhitelist(url, opts.domains)){
-      if (browser.error){
-        if (opts.emitter){
-          opts.emitter.emit('browser-error', browser.error, url)
-        }
-      } 
-
-      browser.wait(function(){
-        parseLinks(url, queue, results, browser, depth, opts.depth)
-        browser.window.close() // jsdom memory leak
-        return cb(null, results)
-      })
-
-    } else {
-        browser.window.close() // jsdom memory leak
-        return cb(null, results)
-    }
-
-  })
-}
-
-
-var parseLinks = function(url, queue, results, browser, depth, maxdepth){
-  // Parse out links
-  var links = browser.document.querySelectorAll('a')
-
-  // links is NodeList, not array, can't forEach()
-  for (var i = 0; i< links.length; i++){
-    var href = links[i].href
-    if (goodUrl(href) && !results[href] && depth+1 < maxdepth) {
-      results[href] = 'pending'
-      queue.push([href, depth+1, url])
-    }
-  }
-}
-
-var goodUrl = function(url){
-  if (url.indexOf("javascript:") == 0) return false;
-  if (url.indexOf("mailto:") == 0) return false;
-  if (url.indexOf("itmss:") == 0) return false; // iTunes store link
-  return true;
-}
-
-var matchDomainWhitelist = function(domain, whitelist){
-  var host = url.parse(domain).host
-  return whitelist.indexOf(host) > -1
-}
-
-
-
