@@ -4,7 +4,7 @@
 
 var child_process = require('child_process')
   , path = require('path')
-  , MAX_PROCESSES = 5
+  , MAX_PROCESSES = process.env.LINK_TEST_MAX_PROCESSES || 5
 
 var testUrls = module.exports = function(startUrl, opts, cb){
 
