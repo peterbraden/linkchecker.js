@@ -6,14 +6,10 @@
  *
  */
 
-var emit = function(ev){
-  process.send({stat: 'event', name: ev, args: Array.prototype.slice.call(arguments)})
-}
 
-var zombie = require('zombie')
+var Zombie = require('zombie')
   , url = require('url')
 
-  , FAIL_CODES = [404, 500]
   , CHROME_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_2) AppleWebKit/53i" + 
                 "7.36 (KHTML, like Gecko) Chrome/36.0.1944.0 Safari/537.36")
 
@@ -21,22 +17,23 @@ var zombie = require('zombie')
 process.on('message', function(m){
   var args = JSON.parse(m)
   
-  createTest(args.url, args.depth, args.source, args.opts, function(err, results){
-    
+  createTest(args.url, args.depth, args.source, args.opts, function(err, results){    
     process.send({stat: "success", results: results})
-  
   })
-
-
 })
 
+// Emit events over process message
+var emit = function(ev){
+  process.send({stat: 'event', name: ev, args: Array.prototype.slice.call(arguments)})
+}
 
+// Entrypoint
 var createTest = module.exports = function(url, depth, source, opts, cb){
 
   var queue = []
     , results = {}
 
-  var browser = new zombie({silent:true, userAgent : CHROME_UA})
+  var browser = new Zombie({silent:true, userAgent : CHROME_UA})
 
   browser.on('response', function(req, res){
     if (matchDomainWhitelist(res.url, opts.domains)){
