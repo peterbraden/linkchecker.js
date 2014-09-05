@@ -49,13 +49,10 @@ var spawnZombieProcess = function(queue, results, currProcesses, opts, done){
     results[k] = 'pending' // Or we can get in cycles...
     delete queue[k]
 
-  console.log("# Checking ", k
-                , "depth:", d
-                , "source:", s
-                , " (in queue:", Object.keys(queue).length
-                , ", checked:", Object.keys(results).length, ")"
-                , "[processes:", currProcesses, "]")
-  
+  if (opts.emitter){
+    opts.emitter.emit('checking', k, d, s, Object.keys(queue).length, Object.keys(results).length, currProcesses);
+  }
+
   // ZombieJS is riddled with memory leaks. We'll just spawn a new one for each page... 
   var z = child_process.fork(path.join(__dirname, 'zombie-process.js'), {})
 

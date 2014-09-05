@@ -78,6 +78,7 @@ var parseLinks = function(url, queue, results, browser, depth, maxdepth){
   // links is NodeList, not array, can't forEach()
   for (var i = 0; i< links.length; i++){
     var href = links[i].href
+    emit('link-encountered', href, url)
     if (goodUrl(href) && !results[href] && depth+1 < maxdepth) {
       results[href] = 'pending'
       queue.push([href, depth+1, url])
